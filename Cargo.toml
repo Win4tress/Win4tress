@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "bins/*", "tools/spikes/*", "ui/src-tauri"]
+
+[workspace.package]
+version = "0.1.19"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+publish = false
+
+[workspace.dependencies]
+w4-core = { path = "crates/w4-core" }
+w4-dns = { path = "crates/w4-dns" }
+w4-etw = { path = "crates/w4-etw" }
+w4-geo = { path = "crates/w4-geo" }
+w4-ipc = { path = "crates/w4-ipc" }
+w4-monitor = { path = "crates/w4-monitor" }
+w4-monitors = { path = "crates/w4-monitors" }
+w4-enforce = { path = "crates/w4-enforce" }
+w4-store = { path = "crates/w4-store" }
+w4-sys = { path = "crates/w4-sys" }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ferrisetw = "1.2"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+windows = "0.62"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
+[profile.release]
+debug = "line-tables-only"
+
+# Debug builds: file and line in backtraces, no full debug info. Full debug
+# info made target\debug over 30 GB; set `debug = true` here to step through
+# code in a debugger.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

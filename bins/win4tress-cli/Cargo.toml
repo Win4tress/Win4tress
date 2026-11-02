@@ -1,0 +1,28 @@
+[package]
+name = "win4tress-cli"
+description = "Command-line client for the win4tress service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "win4tress"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+w4-core.workspace = true
+w4-enforce.workspace = true
+w4-ipc.workspace = true
+w4-store.workspace = true
+w4-sys.workspace = true
+anyhow.workspace = true
+base64 = "0.23.1"
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

@@ -1,0 +1,24 @@
+[package]
+name = "w4-etw"
+description = "ETW collector: Kernel-Network, Kernel-Process and DNS-Client events decoded to NetEvents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+w4-core.workspace = true
+ferrisetw.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dependencies.windows]
+workspace = true
+features = ["Win32_Foundation", "Win32_System_Diagnostics_Etw"]
+
+[dev-dependencies]
+proptest = "1.12"

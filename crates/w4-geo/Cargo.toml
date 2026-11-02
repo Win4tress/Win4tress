@@ -1,0 +1,15 @@
+[package]
+name = "w4-geo"
+description = "Country lookup from the DB-IP Lite database (CC BY 4.0)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+maxminddb = "0.32.0"
+w4-core.workspace = true

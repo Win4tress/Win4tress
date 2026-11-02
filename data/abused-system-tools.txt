@@ -1,0 +1,37 @@
+# Programs built into Windows that malware commonly uses to download or send
+# data. Ask to Connect allows Microsoft-signed system programs automatically on
+# their first block, except these: they always ask (SPEC §7.4). Updated with
+# releases. One file name per line, any case.
+
+bash.exe
+bitsadmin.exe
+certreq.exe
+certutil.exe
+cmd.exe
+cmstp.exe
+cscript.exe
+curl.exe
+desktopimgdownldr.exe
+finger.exe
+ftp.exe
+hh.exe
+installutil.exe
+mshta.exe
+msiexec.exe
+msbuild.exe
+odbcconf.exe
+powershell.exe
+powershell_ise.exe
+presentationhost.exe
+pwsh.exe
+regasm.exe
+regsvcs.exe
+regsvr32.exe
+rundll32.exe
+scp.exe
+sftp.exe
+ssh.exe
+tftp.exe
+wmic.exe
+wscript.exe
+wsl.exe

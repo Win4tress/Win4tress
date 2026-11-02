@@ -1,0 +1,25 @@
+/target/
+**/*.rs.bk
+*.pdb
+
+# Downloaded data (tools/dev/fetch-geo.ps1, fetch-oui.ps1)
+/data/geo/
+/data/oui/
+
+# Probe and benchmark output
+/tools/**/out/
+*.csv
+*.etl
+
+# Front-end (Tauri / Svelte)
+node_modules/
+/ui/dist/
+/ui/.svelte-kit/
+/ui/src-tauri/gen/
+
+# Editors / OS
+.vs/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

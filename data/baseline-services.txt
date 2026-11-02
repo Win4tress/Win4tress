@@ -1,0 +1,35 @@
+# Windows services allowed to connect out while Ask to Connect is on, so that
+# Windows keeps working without a prompt (SPEC §7.4). Updated with releases.
+#
+# One per line: a label, "|", then either
+#   service <name>   matched by the service's own SID, whatever program hosts it
+#   program <path>   environment variables such as %SystemRoot% are expanded
+# Windows' own "Core Networking" rules stay as they are and cover the rest of
+# the basics.
+
+DHCP Client | service Dhcp
+DNS Client | service Dnscache
+Network Location Awareness | service NlaSvc
+Network List Service | service netprofm
+Windows Connection Manager | service Wcmsvc
+IP Helper | service iphlpsvc
+WinHTTP Web Proxy Auto-Discovery | service WinHttpAutoProxySvc
+Windows Time | service W32Time
+Windows Update | service wuauserv
+Update Orchestrator | service UsoSvc
+Windows Update Medic | service WaaSMedicSvc
+Background Intelligent Transfer | service BITS
+Delivery Optimization | service DoSvc
+Cryptographic Services | service CryptSvc
+Microsoft Store Install | service InstallService
+AppX Deployment | service AppXSvc
+Client License Service | service ClipSVC
+Software Protection (activation) | service sppsvc
+Windows License Manager | service LicenseManager
+Microsoft Account Sign-in | service wlidsvc
+Web Account Manager | service TokenBroker
+Windows Push Notifications | service WpnService
+Microsoft Defender Antivirus | service WinDefend
+Microsoft Defender Core | service MDCoreSvc
+Microsoft Defender for Endpoint | service Sense
+Microsoft Defender command line | program %ProgramFiles%\Windows Defender\MpCmdRun.exe

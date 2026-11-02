@@ -1,0 +1,17 @@
+[package]
+name = "w4-core"
+description = "Shared domain types: traffic counters, events, address and port classification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

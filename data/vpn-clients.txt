@@ -1,0 +1,29 @@
+# VPN clients: their traffic is other apps' traffic again, encrypted, so it can
+# be counted twice (SPEC §19). win4tress labels them and can leave them out of
+# totals. Updated with releases. One file name per line, any case: the program
+# that carries the tunnel's traffic (often a service), not just its window.
+
+tailscaled.exe
+wireguard.exe
+openvpn.exe
+openvpnserv.exe
+openvpnserv2.exe
+nordvpn-service.exe
+nordvpn.exe
+expressvpnd.exe
+expressvpn.exe
+protonvpn.wireguardservice.exe
+protonvpnservice.exe
+mullvad-daemon.exe
+windscribeservice.exe
+surfshark.service.exe
+vpnagent.exe
+pangps.exe
+fortisslvpndaemon.exe
+zsatunnel.exe
+warp-svc.exe
+hamachi-2.exe
+zerotier-one_x64.exe
+pia-service.exe
+cyberghost.service.exe
+hotspotshieldservice.exe

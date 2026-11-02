@@ -1,0 +1,18 @@
+[package]
+name = "w4-monitor"
+description = "In-memory traffic model: live per-second buckets, per-app and per-host totals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+w4-core.workspace = true
+w4-ipc.workspace = true
+
+[dev-dependencies]
+proptest = "1.12"

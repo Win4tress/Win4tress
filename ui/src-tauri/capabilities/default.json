@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window, the card and the mini viewer: core APIs and event listening, the title bar's theme, closing the card when it's done, and dragging the frameless mini viewer.",
+  "windows": ["main", "card", "mini"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging"
+  ]
+}

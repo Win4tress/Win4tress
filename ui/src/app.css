@@ -1,0 +1,342 @@
+/* Themes: `data-theme` (light or dark) and `data-palette` (win4tress or
+   indigo) on <html>, set by src/lib/theme.svelte.ts, pick the tokens;
+   components use only these. The win4tress palette is the swatch board:
+   background, text, teal for interaction, a teal gradient for calls to action,
+   coral for blocking and errors. Where a swatch is too light for small text on
+   its background, a darker step of the same hue is used for text (WCAG 4.5:1).
+   Colors are 6-digit hex: the graph appends alpha to them. */
+:root {
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --radius: 10px;
+
+  --bg: #dceefa;
+  --surface: #ffffff;
+  --surface-2: #eef5fb;
+  --border: #cfdeea;
+  --text: #04142b;
+  /* The swatch's gray (#777e88) reads at 3.5:1; this is 5:1 or more. */
+  --text-muted: #5b6470;
+  --grid: #e3edf5;
+  --in: #0b8f9b;
+  --out: #c86a06;
+  /* Teal for selection, switches and highlights; the darker step for text and focus. */
+  --accent: #0e9c9c;
+  --accent-text: #0a7b7e;
+  --highlight: #88ddd6;
+  /* Starts at the swatch's middle teal: dark text over its darkest end is under 4.5:1. */
+  --cta: linear-gradient(90deg, #12a09a, #03c3a4);
+  --on-cta: #04142b;
+  --ok: #15803d;
+  --warn: #b45309;
+  /* Coral: blocked and errors. Fills use --bad; text uses --bad-text. */
+  --bad: #f35c55;
+  --bad-text: #c2372f;
+  --alert-info: #f59e0b;
+  --alert-warning: #f35c55;
+  /* Text and glyphs on the status and alert fills above. */
+  --on-status: #04142b;
+  --knob: #ffffff;
+  /* Categorical chart series, in this fixed order (validated for colour-blind
+     separation against both surfaces). "Other" is the gray for folded tails. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-other: #b4bcc6;
+  /* Sequential (one hue, light to dark): how much, as on the traffic map.
+     Step 1 is near zero and recedes toward the surface. */
+  --seq-1: #cde2fb;
+  --seq-2: #86b6ef;
+  --seq-3: #3987e5;
+  --seq-4: #1c5cab;
+  --seq-5: #0d366b;
+  --seq-none: #e8ebee;
+  --shadow: 0 1px 2px #1018280f, 0 1px 3px #10182814;
+  --shadow-popover: 0 6px 20px #10182826;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #022140;
+  --surface: #0a2a4a;
+  --surface-2: #0f3356;
+  --border: #1e4468;
+  --text: #e9eaee;
+  --text-muted: #9fb2c8;
+  --grid: #143a5e;
+  --in: #2dd4bf;
+  --out: #f5a524;
+  --accent: #10a39c;
+  --accent-text: #8cddd7;
+  --highlight: #8cddd7;
+  --cta: linear-gradient(90deg, #02a29a, #199d98);
+  --on-cta: #022140;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f35c55;
+  --bad-text: #f8817a;
+  --alert-info: #f5a524;
+  --alert-warning: #f35c55;
+  --on-status: #022140;
+  --knob: #ffffff;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-other: #6f8299;
+  /* Dark: near zero recedes toward the dark surface, so the ramp runs dark
+     to light. */
+  --seq-1: #184f95;
+  --seq-2: #256abf;
+  --seq-3: #3987e5;
+  --seq-4: #6da7ec;
+  --seq-5: #b7d3f6;
+  --seq-none: #26384a;
+  --shadow: none;
+  --shadow-popover: 0 6px 20px #00000059;
+  color-scheme: dark;
+}
+
+/* Indigo (`data-palette` on <html>), light and dark: after the Skote admin
+   template's palette. Indigo for interaction and calls to action, gray text on
+   near-white, slate navy for dark. Its success, warning and danger colours are
+   the fills; text uses darker steps in light (WCAG 4.5:1), and the chart
+   palettes are its hues moved into the validated lightness bands. */
+:root[data-palette="indigo"][data-theme="light"] {
+  --bg: #f8f8fb;
+  --surface: #ffffff;
+  --surface-2: #f3f3f9;
+  --border: #dcdfe9;
+  --text: #495057;
+  --text-muted: #686c81;
+  --grid: #eff2f7;
+  --in: #4a61d1;
+  --out: #a94e16;
+  --accent: #556ee6;
+  --accent-text: #4a61d1;
+  --highlight: #8c9cf0;
+  /* A step under the template's #556ee6: white on it is 4.4:1, on this 5:1. */
+  --cta: #4c65dd;
+  --on-cta: #ffffff;
+  --ok: #127a51;
+  --warn: #935e08;
+  --bad: #f46a6a;
+  --bad-text: #c93838;
+  --alert-info: #f1b44c;
+  --alert-warning: #f46a6a;
+  --on-status: #212529;
+  --knob: #ffffff;
+  --series-1: #556ee6;
+  --series-2: #f1734f;
+  --series-3: #34c38f;
+  --series-4: #e1a53a;
+  --series-other: #b9bdca;
+  --seq-1: #d3dbfa;
+  --seq-2: #9eaff2;
+  --seq-3: #556ee6;
+  --seq-4: #3a4fb4;
+  --seq-5: #232f78;
+  --seq-none: #eceef4;
+  --shadow: 0 12px 24px #12263f08, 0 1px 2px #12263f0d;
+  --shadow-popover: 0 8px 24px #12263f26;
+  color-scheme: light;
+}
+
+:root[data-palette="indigo"][data-theme="dark"] {
+  --bg: #222736;
+  --surface: #2a3042;
+  --surface-2: #32394e;
+  --border: #3a4259;
+  --text: #e3e7f1;
+  /* The template's body text: here it's the quieter of the two. */
+  --text-muted: #a6b0cf;
+  --grid: #353c52;
+  --in: #99a8f0;
+  --out: #f1b44c;
+  /* Lighter than the template's #556ee6, which is under 3:1 on this surface. */
+  --accent: #5f78ea;
+  --accent-text: #99a8f0;
+  --highlight: #99a8f0;
+  --cta: #4c65dd;
+  --on-cta: #ffffff;
+  --ok: #34c38f;
+  --warn: #f1b44c;
+  --bad: #f46a6a;
+  --bad-text: #f8a6a6;
+  --alert-info: #f1b44c;
+  --alert-warning: #f46a6a;
+  --on-status: #222736;
+  --knob: #ffffff;
+  --series-1: #6f84ea;
+  --series-2: #d65a36;
+  --series-3: #0eac7a;
+  --series-4: #c28705;
+  --series-other: #5f6884;
+  --seq-1: #33459a;
+  --seq-2: #4459c4;
+  --seq-3: #647deb;
+  --seq-4: #96a8f2;
+  --seq-5: #c9d2f9;
+  --seq-none: #2e3548;
+  --shadow: 0 12px 24px #0b0e1a26;
+  --shadow-popover: 0 8px 24px #0000006b;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* The mini viewer's window is transparent; its card has the background. */
+html.mini,
+html.mini body {
+  background: transparent;
+}
+
+/* The card's window is the card. */
+html.card-window,
+html.card-window body {
+  background: var(--surface);
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.in {
+  color: var(--in);
+}
+
+.out {
+  color: var(--out);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+
+.card-title {
+  font: 600 14px/1.3 var(--font-display);
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+/* Buttons and chips shared by the firewall screens. */
+.btn {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn.small {
+  font-size: 12.5px;
+  padding: 3px 11px;
+}
+/* The main action (call to action). */
+.btn.primary {
+  background: var(--cta);
+  color: var(--on-cta);
+  border-color: transparent;
+  font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--cta);
+  filter: brightness(1.06);
+}
+/* Blocks or removes. */
+.btn.danger {
+  background: var(--bad);
+  color: var(--on-status);
+  border-color: transparent;
+  font-weight: 600;
+}
+.btn.danger:hover:not(:disabled) {
+  background: var(--bad);
+  filter: brightness(1.06);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.chip.bad {
+  border-color: transparent;
+  background: var(--bad);
+  color: var(--on-status);
+}
+.chip.warn {
+  border-color: transparent;
+  background: var(--alert-info);
+  color: var(--on-status);
+}
+.error-text {
+  color: var(--bad-text);
+}

@@ -1,0 +1,21 @@
+[package]
+name = "w4-dns"
+description = "DNS filtering (SPEC §13): blocklist formats, the compiler and memory-mapped matcher, rules, and DNS messages"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+memmap2 = "0.9.8"
+regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case"] }
+serde.workspace = true
+serde_json.workspace = true
+siphasher = "1.0.4"
+
+[dev-dependencies]
+proptest = "1.12"
