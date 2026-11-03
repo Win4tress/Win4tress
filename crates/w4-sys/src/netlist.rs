@@ -75,7 +75,11 @@ pub fn networks(all: bool) -> Vec<KnownNetwork> {
             if list.Next(&mut item, Some(&mut fetched)).is_err() || fetched == 0 {
                 break;
             }
-            if let Some(network) = item[0].take().as_ref().and_then(read) {
+            // Listed as connected but not (Tailscale signed out, its adapter
+            // still up): not connected, for choosing a profile.
+            if let Some(network) = item[0].take().as_ref().and_then(read)
+                && (all || network.connected)
+            {
                 out.push(network);
             }
         }

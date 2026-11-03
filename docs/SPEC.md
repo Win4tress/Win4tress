@@ -661,6 +661,7 @@ As built (Phase 7):
 - **Edge cases:**
   - A sign-in page (no internet, an adapter with a gateway up): lookups pass through unfiltered.
   - Local names (one label, adapters' DNS suffixes, `.local`, private reverse lookups) go to the network's servers, even with DoH. Split DNS sends a suffix to all of them, not only to the adapter it came from.
+  - A one-label or `.local` name the servers don't know (NXDOMAIN, or no answer) is looked for on the local network, LLMNR and mDNS, as Windows does without the routing rule (2026-11-02, 0.1.20). With the rule in place Windows takes the resolver's NXDOMAIN as final, so `\server` and `printer.local` failed while filtering was on. Through the DNS Client with "multicast only" (`DnsQuery_W`), which never asks a DNS server and so can't come back to the resolver. A and AAAA only; link-local IPv6 left out; a name found with only the other family gets an empty answer, not NXDOMAIN. Found or not, a name is kept 30 s, and lookups of it meanwhile share the one search.
   - A VPN's own DNS servers count among the network's servers, and its NRPT rules win.
   - IPv6 servers from the router are used.
   - Port 53 taken: the status shows the resolver's error. Internet Connection Sharing holding `0.0.0.0:53` doesn't stop it binding loopback.

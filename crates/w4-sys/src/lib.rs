@@ -5,6 +5,7 @@ pub mod av;
 pub mod eventlog;
 pub mod fs;
 pub mod http;
+pub mod localname;
 pub mod net;
 pub mod netinfo;
 pub mod netlist;

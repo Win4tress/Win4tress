@@ -81,6 +81,7 @@ clean install, reboot, a week in Ask to Connect) are still to run.
     your allow, block and regex rules, local names, pause, and lookups sent to
     your network's DNS servers or over HTTPS (Cloudflare, Quad9, Google). If
     the resolver stops answering, Windows' own DNS is back within 2 seconds.
+    Names on your local network (`\server`, `printer.local`) keep working.
     Off by default.
   - **Map** (in Traffic): internet traffic by country on a world map, for a day,
     a week, a month or a year, with the countries listed beside it.

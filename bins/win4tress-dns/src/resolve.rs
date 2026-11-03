@@ -1,12 +1,17 @@
 //! One lookup, start to finish (SPEC §13): the health name and local records
 //! answered here; a sign-in page passed through; allow, deny, regex and the
 //! blocklists; the cache; upstream (system servers for local names and the
-//! DoH server's own name); then the answer's CNAMEs checked too.
+//! DoH server's own name); then the answer's CNAMEs checked too. A one-label
+//! or `.local` name the servers don't know is looked for on the local network,
+//! as Windows would without the routing rule.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use tokio::sync::OnceCell;
 
 use w4_dns::config::{FIREFOX_CANARY, HEALTH_NAME, Observe, Upstream, is_local_name};
 use w4_dns::rules::{Verdict, Why};
@@ -23,6 +28,12 @@ const NO: u8 = 1;
 const YES: u8 = 2;
 /// Names a filtering upstream answers with a null address or NXDOMAIN.
 const PROBES: &[&str] = &["doubleclick.net", "googleadservices.com"];
+/// How long a name's addresses on the local network, or their absence, are kept.
+const NEARBY_TTL: Duration = Duration::from_secs(30);
+
+/// A name's addresses on the local network: looked for once, shared by every
+/// lookup of it meanwhile (Windows asks for A and AAAA at once, and again).
+type Nearby = Arc<OnceCell<Vec<IpAddr>>>;
 
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -36,6 +47,7 @@ pub struct Resolver {
     pub journal: Journal,
     doh: Mutex<Option<Arc<Doh>>>,
     upstream_blocks: AtomicU8,
+    nearby: Mutex<HashMap<String, (Instant, Nearby)>>,
 }
 
 fn why_text(s: &Loaded, why: &Why) -> (String, String) {
@@ -72,7 +84,65 @@ impl Resolver {
             journal: Journal::default(),
             doh: Mutex::new(None),
             upstream_blocks: AtomicU8::new(UNKNOWN),
+            nearby: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// `name`'s addresses on the local network (LLMNR, mDNS), IPv4 and IPv6.
+    async fn on_local_network(&self, name: &str) -> Vec<IpAddr> {
+        let cell = {
+            let mut map = self.nearby.lock().unwrap_or_else(|p| p.into_inner());
+            map.retain(|_, (t, _)| t.elapsed() < NEARBY_TTL);
+            map.entry(name.to_string())
+                .or_insert_with(|| (Instant::now(), Nearby::default()))
+                .1
+                .clone()
+        };
+        cell.get_or_init(|| async {
+            let (v4, v6) = (name.to_string(), name.to_string());
+            let (v4, v6) = tokio::join!(
+                tokio::task::spawn_blocking(move || w4_sys::localname::lookup(&v4, false)),
+                tokio::task::spawn_blocking(move || w4_sys::localname::lookup(&v6, true)),
+            );
+            let mut all = v4.unwrap_or_default();
+            all.extend(v6.unwrap_or_default());
+            all
+        })
+        .await
+        .clone()
+    }
+
+    /// For a one-label or `.local` A or AAAA lookup the servers couldn't
+    /// answer, the answer from the local network, if anything there has the name.
+    async fn nearby_answer(
+        &self,
+        query: &[u8],
+        q: &wire::Query,
+        upstream_ms: Option<u32>,
+    ) -> Option<Vec<u8>> {
+        let name = &q.question.name;
+        if !matches!(q.question.qtype, wire::TYPE_A | wire::TYPE_AAAA)
+            || !w4_sys::localname::is_multicast_name(name)
+        {
+            return None;
+        }
+        let addrs = self.on_local_network(name).await;
+        tracing::debug!(%name, found = addrs.len(), "looked for on the local network");
+        if addrs.is_empty() {
+            return None;
+        }
+        self.journal.record(
+            self.entry(
+                q,
+                Outcome::Local,
+                Some("found on the local network".into()),
+                upstream_ms,
+                wire::RCODE_NOERROR,
+            ),
+            None,
+        );
+        // Only the asked family; none of it is an empty answer, not NXDOMAIN.
+        Some(wire::local(query, q, &addrs))
     }
 
     /// The DoH client for the configured URL, made anew when it changes.
@@ -299,6 +369,9 @@ impl Resolver {
         let (answer, _) = match self.forward(&s, &name, query).await {
             Ok(a) => a,
             Err(e) => {
+                if let Some(answer) = self.nearby_answer(query, &q, None).await {
+                    return Some(answer);
+                }
                 self.journal.record(
                     self.entry(&q, Outcome::Failed, Some(e), None, wire::RCODE_SERVFAIL),
                     None,
@@ -308,6 +381,11 @@ impl Resolver {
         };
         let upstream_ms = Some(t.elapsed().as_millis() as u32);
         let parsed = wire::parse_answer(&answer).ok();
+        if parsed.as_ref().is_some_and(|a| a.rcode == wire::RCODE_NXDOMAIN)
+            && let Some(answer) = self.nearby_answer(query, &q, upstream_ms).await
+        {
+            return Some(answer);
+        }
         // CNAME inspection: a blocked name behind an alias is blocked too.
         if filtering
             && !observe
@@ -345,5 +423,37 @@ impl Resolver {
             None,
         );
         Some(answer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A resolver whose config file is `json`, in a folder of its own.
+    fn resolver(json: &str) -> Resolver {
+        let dir = std::env::temp_dir().join(format!("w4-resolve-{}", w4_sys::random::u16()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), json).unwrap();
+        Resolver::new(Current::new(dir))
+    }
+
+    /// Needs the network and a named computer on it:
+    /// `$env:W4_LOCAL_NAME = "garrserver"; cargo test -p win4tress-dns nearby -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "needs a named computer on the local network"]
+    async fn a_local_name_dns_doesn_t_know_is_found_nearby() {
+        let name = std::env::var("W4_LOCAL_NAME").expect("W4_LOCAL_NAME");
+        let r = resolver(r#"{"system_servers":["1.1.1.1"]}"#);
+        for qtype in [wire::TYPE_A, wire::TYPE_AAAA] {
+            let q = wire::query(1, &name, qtype).unwrap();
+            let a = wire::parse_answer(&r.answer(&q).await.unwrap()).unwrap();
+            println!("{name} type {qtype}: rcode {} answers {}", a.rcode, a.answers.len());
+            // Found: an answer, even one with no records of the family asked for.
+            assert_eq!(a.rcode, wire::RCODE_NOERROR);
+        }
+        let none = wire::query(2, "w4-no-such-host-7f3a91", wire::TYPE_A).unwrap();
+        let a = wire::parse_answer(&r.answer(&none).await.unwrap()).unwrap();
+        assert_eq!(a.rcode, wire::RCODE_NXDOMAIN);
     }
 }
