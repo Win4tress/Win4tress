@@ -8,6 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 pub const TYPE_A: u16 = 1;
 pub const TYPE_CNAME: u16 = 5;
+pub const TYPE_SOA: u16 = 6;
 pub const TYPE_AAAA: u16 = 28;
 pub const TYPE_HTTPS: u16 = 65;
 pub const TYPE_OPT: u16 = 41;
@@ -304,6 +305,34 @@ pub fn error(query: &[u8], q: &Query, rcode: u8) -> Vec<u8> {
     answer_with(query, q, rcode, &[])
 }
 
+/// "No such name" that askers keep only `ttl` seconds (RFC 2308): an SOA for
+/// the zone above the name in the authority section, its TTL and minimum
+/// `ttl`, named as RFC 6303's locally served zones are.
+pub fn brief_nxdomain(query: &[u8], q: &Query, ttl: u32) -> Vec<u8> {
+    let zone = q.question.name.split_once('.').map_or("", |(_, z)| z);
+    let mut owner = Vec::new();
+    let mut rdata = Vec::new();
+    let named = write_name(&mut owner, zone)
+        .and_then(|()| write_name(&mut rdata, zone))
+        .and_then(|()| write_name(&mut rdata, "nobody.invalid"));
+    if named.is_err() {
+        return error(query, q, RCODE_NXDOMAIN);
+    }
+    // Serial, refresh, retry, expire, then the minimum.
+    for n in [1, 3600, 1200, 604_800, ttl] {
+        rdata.extend_from_slice(&u32::to_be_bytes(n));
+    }
+    let mut out = error(query, q, RCODE_NXDOMAIN);
+    out[8..10].copy_from_slice(&1u16.to_be_bytes());
+    out.extend_from_slice(&owner);
+    out.extend_from_slice(&TYPE_SOA.to_be_bytes());
+    out.extend_from_slice(&CLASS_IN.to_be_bytes());
+    out.extend_from_slice(&ttl.to_be_bytes());
+    out.extend_from_slice(&(rdata.len() as u16).to_be_bytes());
+    out.extend_from_slice(&rdata);
+    out
+}
+
 /// For an answer too large for UDP: just the question, with TC set, so the
 /// asker comes back over TCP.
 pub fn truncated(query: &[u8], q: &Query) -> Vec<u8> {
@@ -483,6 +512,25 @@ mod tests {
         assert_eq!(a.answers[0].data, RData::Cname("cdn.example.net".into()));
         assert_eq!(a.answers[1].name, "cdn.example.net");
         assert_eq!(a.answers[1].data, RData::A(Ipv4Addr::new(1, 2, 3, 4)));
+    }
+
+    #[test]
+    fn brief_nxdomain_carries_a_short_soa() {
+        for (name, zone) in [("garrserver", ""), ("printer.local", "local")] {
+            let q = query(7, name, TYPE_A).unwrap();
+            let p = parse_query(&q).unwrap();
+            let m = brief_nxdomain(&q, &p, 5);
+            let a = parse_answer(&m).unwrap();
+            assert_eq!((a.id, a.rcode, a.answers.len()), (7, RCODE_NXDOMAIN, 0));
+            assert_eq!(u16_at(&m, 8).unwrap(), 1);
+            let (owner, end) = read_name(&m, p.question_end).unwrap();
+            assert_eq!(owner, zone);
+            assert_eq!(u16_at(&m, end).unwrap(), TYPE_SOA);
+            assert_eq!(u32_at(&m, end + 4).unwrap(), 5);
+            let len = usize::from(u16_at(&m, end + 8).unwrap());
+            assert_eq!(end + 10 + len, m.len());
+            assert_eq!(u32_at(&m, m.len() - 4).unwrap(), 5);
+        }
     }
 
     #[test]

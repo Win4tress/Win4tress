@@ -115,7 +115,7 @@ async fn run(dir: PathBuf, port: u16, pipe: String, shutdown: CancellationToken)
                 _ = tick.tick() => {}
             }
             if watch.current.reload_if_changed() {
-                watch.cache.clear();
+                watch.forget();
                 watch.probe_upstream().await;
                 last_probe = tokio::time::Instant::now();
             } else if last_probe.elapsed() >= PROBE_EVERY {

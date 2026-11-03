@@ -177,7 +177,8 @@
     {#if !d.enabled}
       <section class="card about">
         <p>
-          With DNS filtering on, Windows asks win4tress's own resolver on this PC for every name. It answers
+          With DNS filtering on, Windows asks win4tress's own resolver on this PC for internet names (names on your
+          local network, like \\server, are looked up as usual). It answers
           names on the blocklists you choose with nothing (0.0.0.0), and asks your network's DNS servers, or
           a DNS-over-HTTPS service you choose, for the rest. Lists are downloaded from their makers, never
           bundled. If the resolver stops answering, Windows' own DNS is back within 2 seconds.

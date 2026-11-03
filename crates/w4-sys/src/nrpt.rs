@@ -1,10 +1,17 @@
-//! Routing every lookup to the local resolver with a Name Resolution Policy
-//! Table rule (SPEC §13, spike 0.7): namespace `.` → `127.0.0.1;::1`, under a
-//! key of win4tress's own. Adapters' DNS settings are left alone, so their
-//! servers stay visible as the resolver's upstream; more specific rules (a
-//! VPN's, Tailscale's) still win. Removing the key puts Windows back as it was.
+//! Routing internet lookups to the local resolver with a Name Resolution
+//! Policy Table rule (SPEC §13, spike 0.7): every top-level domain in the root
+//! zone → `127.0.0.1;::1`, under a key of win4tress's own. Not `.`: with that,
+//! Windows took one-label names (`\\server`) for DNS names, refused them as
+//! invalid and never looked on the local network. Names under no public
+//! top-level domain (one label, `.local`, `.lan`) and reverse lookups go the
+//! usual way. Adapters' DNS settings are left alone, so their servers stay
+//! visible as the resolver's upstream; more specific rules (a VPN's,
+//! Tailscale's) still win. Removing the key puts Windows back as it was.
 //! The key is volatile: Windows discards it at restart, so a service that
 //! died with the rule in place can't leave a restarted PC without DNS.
+//!
+//! `tlds.txt` is IANA's list, refreshed with
+//! `curl -o crates/w4-sys/src/tlds.txt https://data.iana.org/TLD/tlds-alpha-by-domain.txt`.
 
 use std::net::IpAddr;
 
@@ -21,6 +28,17 @@ const BASE: &str = r"SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPo
 pub const RULE: &str = "{4F1E5C7A-7A1D-4D92-9C3E-77A3B0F0D453}";
 /// "Generic DNS servers" in an NRPT rule's ConfigOptions.
 const GENERIC_SERVERS: u32 = 8;
+const TLDS: &str = include_str!("tlds.txt");
+
+/// The rule's namespaces: `.com`, `.net` and every other top-level domain,
+/// but `arpa`.
+pub fn namespaces() -> Vec<String> {
+    TLDS.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#') && !l.eq_ignore_ascii_case("arpa"))
+        .map(|tld| format!(".{}", tld.to_ascii_lowercase()))
+        .collect()
+}
 
 #[link(name = "dnsapi", kind = "raw-dylib")]
 unsafe extern "system" {
@@ -42,8 +60,8 @@ fn wide(s: &str) -> Vec<u8> {
 }
 
 /// REG_MULTI_SZ: each string NUL-terminated, then one more NUL.
-fn multi(strings: &[&str]) -> Vec<u8> {
-    let mut out: Vec<u8> = strings.iter().flat_map(|s| wide(s)).collect();
+fn multi<S: AsRef<str>>(strings: &[S]) -> Vec<u8> {
+    let mut out: Vec<u8> = strings.iter().flat_map(|s| wide(s.as_ref())).collect();
     out.extend_from_slice(&[0, 0]);
     out
 }
@@ -78,8 +96,8 @@ fn create(path: &HSTRING, options: REG_OPEN_CREATE_OPTIONS) -> Result<HKEY, Stri
     Ok(hkey)
 }
 
-/// Routes every name to `servers` (the resolver's loopback addresses).
-/// Needs administrators.
+/// Routes every name under a public top-level domain to `servers` (the
+/// resolver's loopback addresses). Needs administrators.
 pub fn set(servers: &[IpAddr]) -> Result<(), String> {
     let list = servers
         .iter()
@@ -98,7 +116,7 @@ pub fn set(servers: &[IpAddr]) -> Result<(), String> {
     unsafe {
         let values: [(&str, _, Vec<u8>); 5] = [
             ("Version", REG_DWORD, 1u32.to_le_bytes().to_vec()),
-            ("Name", REG_MULTI_SZ, multi(&["."])),
+            ("Name", REG_MULTI_SZ, multi(&namespaces())),
             ("GenericDNSServers", REG_SZ, wide(&list)),
             (
                 "ConfigOptions",
@@ -175,6 +193,24 @@ mod tests {
     fn multi_strings_end_with_two_nuls() {
         assert_eq!(multi(&["."]), vec![b'.', 0, 0, 0, 0, 0]);
         assert_eq!(wide("a"), vec![b'a', 0, 0, 0]);
+    }
+
+    #[test]
+    fn the_rule_covers_public_tlds_only() {
+        let names = namespaces();
+        assert!(names.len() > 1000);
+        for public in [".com", ".net", ".uk", ".xn--p1ai"] {
+            assert!(names.iter().any(|n| n == public), "{public}");
+        }
+        // Local names and reverse lookups go Windows' usual way.
+        for private in [".", ".local", ".lan", ".home", ".internal", ".arpa"] {
+            assert!(!names.iter().any(|n| n == private), "{private}");
+        }
+        assert!(
+            names
+                .iter()
+                .all(|n| n.starts_with('.') && *n == n.to_ascii_lowercase())
+        );
     }
 
     #[test]

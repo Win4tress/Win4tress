@@ -3,14 +3,16 @@
 //! DNS filtering's routing rule sends every lookup to the resolver, and Windows
 //! takes the resolver's "no such name" as final, so the resolver asks here
 //! itself. "Multicast only" keeps the DNS Client service off DNS servers, and
-//! so off the routing rule: the lookup can't come back to the resolver.
+//! so off the routing rule: the lookup can't come back to the resolver. It
+//! skips Windows' cache too, which may hold the resolver's own earlier "no
+//! such name".
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::NetworkManagement::Dns::{
-    DNS_QUERY_MULTICAST_ONLY, DNS_RECORDA, DNS_TYPE_A, DNS_TYPE_AAAA, DnsFree, DnsFreeRecordList,
-    DnsQuery_W,
+    DNS_QUERY_BYPASS_CACHE, DNS_QUERY_MULTICAST_ONLY, DNS_RECORDA, DNS_TYPE_A, DNS_TYPE_AAAA,
+    DnsFree, DnsFreeRecordList, DnsQuery_W,
 };
 use windows::core::HSTRING;
 
@@ -33,7 +35,7 @@ pub fn lookup(name: &str, v6: bool) -> Vec<IpAddr> {
         DnsQuery_W(
             &HSTRING::from(name),
             wtype,
-            DNS_QUERY_MULTICAST_ONLY,
+            DNS_QUERY_MULTICAST_ONLY | DNS_QUERY_BYPASS_CACHE,
             None,
             &mut list,
             None,
@@ -53,7 +55,9 @@ pub fn lookup(name: &str, v6: bool) -> Vec<IpAddr> {
                 IpAddr::V6(Ipv6Addr::from(unsafe { rec.Data.AAAA.Ip6Address.IP6Byte }))
             } else {
                 // SAFETY: an A record's data is DNS_A_DATA, in network byte order.
-                IpAddr::V4(Ipv4Addr::from(unsafe { rec.Data.A.IpAddress }.to_ne_bytes()))
+                IpAddr::V4(Ipv4Addr::from(
+                    unsafe { rec.Data.A.IpAddress }.to_ne_bytes(),
+                ))
             };
             let link_local = matches!(ip, IpAddr::V6(a) if a.segments()[0] & 0xffc0 == 0xfe80);
             if !link_local && !out.contains(&ip) {

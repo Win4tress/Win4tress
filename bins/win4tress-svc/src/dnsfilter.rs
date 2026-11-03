@@ -48,6 +48,13 @@ const RESTART_AFTER: Duration = Duration::from_secs(2);
 const UNREADABLE_AFTER: Duration = Duration::from_secs(10);
 /// How long a resolver's "blocked" stays matched to the DNS log.
 const BLOCKED_NAMES_KEEP_MS: i64 = 15 * 60 * 1000;
+/// A block labels the DNS log's lookups of its name this long either side
+/// (Windows' cache answers again with what the resolver gave).
+const BLOCKED_MATCH_MS: i64 = 60_000;
+/// After the allow, deny or regex rules change, Windows' DNS cache is emptied
+/// this long after (the resolver reloads within a second), so a name unblocked
+/// a moment ago isn't still answered 0.0.0.0 from it.
+const FLUSH_AFTER: Duration = Duration::from_millis(1500);
 const MAX_BLOCKED_NAMES: usize = 5_000;
 /// CREATE_NO_WINDOW: the resolver gets no console of its own.
 const NO_WINDOW: u32 = 0x0800_0000;
@@ -112,6 +119,15 @@ fn custom_id(c: &CustomList) -> String {
         h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
     }
     format!("custom-{h:016x}")
+}
+
+/// Whether an allow or deny `rule` covers `name`: the domain or a subdomain.
+fn covers(rule: &str, name: &str) -> bool {
+    let rule = rule.trim_end_matches('.').to_ascii_lowercase();
+    name == rule
+        || name
+            .strip_suffix(rule.as_str())
+            .is_some_and(|p| p.ends_with('.'))
 }
 
 /// The DNS servers the resolver asks: every connected adapter's, those with
@@ -271,6 +287,8 @@ struct State {
     started_ms: Option<i64>,
     /// The settings the last config was made from: a change applies at once.
     seen: Option<DnsSettings>,
+    /// When to empty Windows' DNS cache, after a rules change.
+    flush_at: Option<Instant>,
 }
 
 pub struct DnsFilter {
@@ -280,8 +298,9 @@ pub struct DnsFilter {
     resolver_exe: PathBuf,
     pipe: String,
     state: Mutex<State>,
-    /// Names the resolver blocked lately → (why, when), for the DNS log.
-    blocked: Mutex<HashMap<String, (String, i64)>>,
+    /// Names the resolver blocked lately → (why, when, labelled until), for
+    /// the DNS log.
+    blocked: Mutex<HashMap<String, (String, i64, i64)>>,
     updating: AtomicBool,
     force_update: AtomicBool,
 }
@@ -399,6 +418,18 @@ impl DnsFilter {
                 this.remove_old_lists();
             })
             .await;
+        }
+        let flush = {
+            let mut s = lock(&self.state);
+            if s.flush_at.is_some_and(|t| Instant::now() >= t) {
+                s.flush_at = None;
+                s.routed
+            } else {
+                false
+            }
+        };
+        if flush {
+            w4_sys::nrpt::flush_cache();
         }
         self.ensure_resolver();
         let healthy = health_check().await;
@@ -598,9 +629,19 @@ impl DnsFilter {
         }
         let compiled = lock(&self.state).compiled.clone();
         let config = build_config(settings, compiled.as_ref(), servers, captive());
-        if lock(&self.state).written.as_ref() == Some(&config) {
-            return;
-        }
+        let (rules_changed, newly_allowed) = match lock(&self.state).written.as_ref() {
+            Some(w) if *w == config => return,
+            Some(w) => (
+                w.allow != config.allow || w.deny != config.deny || w.regex != config.regex,
+                config
+                    .allow
+                    .iter()
+                    .filter(|a| !w.allow.contains(a))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            ),
+            None => (false, Vec::new()),
+        };
         let Ok(json) = serde_json::to_string_pretty(&config) else {
             return;
         };
@@ -612,7 +653,13 @@ impl DnsFilter {
                     passthrough = config.passthrough,
                     "DNS filtering configuration written"
                 );
-                lock(&self.state).written = Some(config);
+                let mut s = lock(&self.state);
+                s.written = Some(config);
+                if rules_changed {
+                    s.flush_at = Some(Instant::now() + FLUSH_AFTER);
+                }
+                drop(s);
+                self.unblocked(&newly_allowed);
             }
             Err(e) => {
                 lock(&self.state).message =
@@ -801,14 +848,20 @@ impl DnsFilter {
                 if e.outcome == w4_dns::status::Outcome::Blocked {
                     blocked.insert(
                         e.name.clone(),
-                        (e.reason.clone().unwrap_or_default(), e.ts_ms),
+                        (
+                            e.reason.clone().unwrap_or_default(),
+                            e.ts_ms,
+                            e.ts_ms + BLOCKED_MATCH_MS,
+                        ),
                     );
                 }
             }
-            blocked.retain(|_, (_, ts)| now - *ts < BLOCKED_NAMES_KEEP_MS);
+            blocked.retain(|_, (_, ts, _)| now - *ts < BLOCKED_NAMES_KEEP_MS);
             if blocked.len() > MAX_BLOCKED_NAMES {
-                let mut by_age: Vec<_> =
-                    blocked.iter().map(|(n, (_, t))| (*t, n.clone())).collect();
+                let mut by_age: Vec<_> = blocked
+                    .iter()
+                    .map(|(n, (_, t, _))| (*t, n.clone()))
+                    .collect();
                 by_age.sort();
                 for (_, n) in by_age.into_iter().take(blocked.len() - MAX_BLOCKED_NAMES) {
                     blocked.remove(&n);
@@ -823,8 +876,22 @@ impl DnsFilter {
     /// What blocked `name` around `ts_ms`, for the DNS log.
     pub fn blocked_by(&self, name: &str, ts_ms: i64) -> Option<String> {
         let blocked = lock(&self.blocked);
-        let (why, at) = blocked.get(&name.to_ascii_lowercase())?;
-        ((ts_ms - at).abs() < 60_000).then(|| why.clone())
+        let (why, at, until) = blocked.get(&name.to_ascii_lowercase())?;
+        (ts_ms > at - BLOCKED_MATCH_MS && ts_ms < *until).then(|| why.clone())
+    }
+
+    /// Names just allowed: their lookups from now on aren't labelled blocked
+    /// (earlier ones still are).
+    fn unblocked(&self, rules: &[String]) {
+        if rules.is_empty() {
+            return;
+        }
+        let now = now_unix_ms();
+        for (name, (_, _, until)) in lock(&self.blocked).iter_mut() {
+            if rules.iter().any(|r| covers(r, name)) {
+                *until = (*until).min(now);
+            }
+        }
     }
 
     pub fn update_now(&self) {
@@ -1071,6 +1138,15 @@ async fn health_check() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rules_cover_the_domain_and_its_subdomains() {
+        assert!(covers("bam.nr-data.net", "bam.nr-data.net"));
+        assert!(covers("nr-data.net", "bam.nr-data.net"));
+        assert!(covers("NR-Data.net.", "bam.nr-data.net"));
+        assert!(!covers("data.net", "bam.nr-data.net"));
+        assert!(!covers("bam.nr-data.net", "nr-data.net"));
+    }
 
     #[test]
     fn settings_are_checked() {

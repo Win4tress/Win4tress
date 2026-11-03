@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { api, type DnsEntry } from "./api";
+  import { api, errorText, type DnsEntry } from "./api";
   import AppIcon from "./AppIcon.svelte";
   import { clock, dnsStatus, dnsType } from "./format";
 
-  /** Every DNS lookup, newest first, by the app that made it. */
+  /** Every DNS lookup, newest first, by the app that made it. A blocked one
+   *  can be unblocked: its name goes on DNS filtering's allow list. */
   interface Props {
     /** Name filter; the dashboard sets it when a domain is picked. */
     query?: string;
@@ -16,6 +17,41 @@
   let entries = $state.raw<DnsEntry[]>([]);
   let error = $state<string | null>(null);
   let failedOnly = $state(false);
+  /** DNS filtering's allow rules: names they cover show as allowed, not Unblock. */
+  let allow = $state.raw<string[]>([]);
+  let unblocking = $state<string | null>(null);
+
+  $effect(() => {
+    api.settings().then(
+      (s) => (allow = s.dns.allow),
+      () => {},
+    );
+  });
+
+  const allowed = (name: string) =>
+    allow.some((r) => {
+      const rule = r.toLowerCase().replace(/\.$/, "");
+      return name === rule || name.endsWith(`.${rule}`);
+    });
+
+  /** Always allows `name` (and its subdomains); a deny rule for exactly it goes. */
+  async function unblock(name: string) {
+    unblocking = name;
+    error = null;
+    try {
+      const s = await api.settings();
+      const dns = {
+        ...s.dns,
+        allow: [...s.dns.allow.filter((n) => n !== name), name],
+        deny: s.dns.deny.filter((n) => n !== name),
+      };
+      allow = (await api.setSettings({ ...s, dns })).dns.allow;
+    } catch (e) {
+      error = `Couldn't unblock ${name}: ${errorText(e)}`;
+    } finally {
+      unblocking = null;
+    }
+  }
 
   // The search runs on the service, so it reaches past the newest 1000 entries.
   $effect(() => {
@@ -81,7 +117,21 @@
             <td class="muted">{dnsType(e.query_type)}</td>
             <td class="fill"><span class="ellipsis block" title={e.name}>{e.name}</span></td>
             <td class="fill">
-              <span class="ellipsis block result" title={result(e)}>{result(e)}</span>
+              <div class="cell">
+                <span class="ellipsis block result" title={result(e)}>{result(e)}</span>
+                {#if e.blocked_by}
+                  {#if allowed(e.name)}
+                    <span class="muted nowrap small">allowed now</span>
+                  {:else}
+                    <button
+                      class="btn small unblock"
+                      disabled={unblocking !== null}
+                      title="Always allow {e.name} and its subdomains (DNS → Filtering → Always allow)"
+                      onclick={() => unblock(e.name)}>{unblocking === e.name ? "Unblocking…" : "Unblock"}</button
+                    >
+                  {/if}
+                {/if}
+              </div>
             </td>
           </tr>
         {:else}
@@ -163,6 +213,18 @@
   }
   .block {
     display: block;
+  }
+  .cell .result {
+    flex: 1;
+    min-width: 0;
+  }
+  .small {
+    font-size: 12px;
+  }
+  /* Into the cell's padding, so a row with the button is as tall as one without. */
+  .unblock {
+    margin: -4px 0;
+    padding: 1px 10px;
   }
   .nowrap {
     white-space: nowrap;

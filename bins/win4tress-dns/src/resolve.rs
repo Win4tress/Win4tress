@@ -3,7 +3,9 @@
 //! blocklists; the cache; upstream (system servers for local names and the
 //! DoH server's own name); then the answer's CNAMEs checked too. A one-label
 //! or `.local` name the servers don't know is looked for on the local network,
-//! as Windows would without the routing rule.
+//! as Windows would without the routing rule, in pass-through too. If nothing
+//! there has it either, "no such name" is kept only seconds, here and by
+//! Windows: just after a wake the network may not be up yet.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -28,8 +30,11 @@ const NO: u8 = 1;
 const YES: u8 = 2;
 /// Names a filtering upstream answers with a null address or NXDOMAIN.
 const PROBES: &[&str] = &["doubleclick.net", "googleadservices.com"];
-/// How long a name's addresses on the local network, or their absence, are kept.
+/// How long a name's addresses on the local network are kept.
 const NEARBY_TTL: Duration = Duration::from_secs(30);
+/// How long a name nothing on the local network has stays unknown, here and
+/// in Windows' cache (the TTL of the "no such name" answer).
+const MISS_SECS: u32 = 5;
 
 /// A name's addresses on the local network: looked for once, shared by every
 /// lookup of it meanwhile (Windows asks for A and AAAA at once, and again).
@@ -68,6 +73,15 @@ fn why_text(s: &Loaded, why: &Why) -> (String, String) {
     }
 }
 
+/// A lookup Windows would also try on the local network: A or AAAA for a
+/// one-label or `.local` name.
+fn nearby_name(q: &wire::Query) -> bool {
+    q.standard
+        && q.question.qclass == wire::CLASS_IN
+        && matches!(q.question.qtype, wire::TYPE_A | wire::TYPE_AAAA)
+        && w4_sys::localname::is_multicast_name(&q.question.name)
+}
+
 fn null_answer(a: &wire::Answer) -> bool {
     a.answers.iter().any(|r| match r.data {
         RData::A(v4) => v4.is_unspecified(),
@@ -92,7 +106,13 @@ impl Resolver {
     async fn on_local_network(&self, name: &str) -> Vec<IpAddr> {
         let cell = {
             let mut map = self.nearby.lock().unwrap_or_else(|p| p.into_inner());
-            map.retain(|_, (t, _)| t.elapsed() < NEARBY_TTL);
+            map.retain(|_, (t, cell)| {
+                let keep = match cell.get() {
+                    Some(addrs) if addrs.is_empty() => Duration::from_secs(MISS_SECS.into()),
+                    _ => NEARBY_TTL,
+                };
+                t.elapsed() < keep
+            });
             map.entry(name.to_string())
                 .or_insert_with(|| (Instant::now(), Nearby::default()))
                 .1
@@ -120,12 +140,10 @@ impl Resolver {
         q: &wire::Query,
         upstream_ms: Option<u32>,
     ) -> Option<Vec<u8>> {
-        let name = &q.question.name;
-        if !matches!(q.question.qtype, wire::TYPE_A | wire::TYPE_AAAA)
-            || !w4_sys::localname::is_multicast_name(name)
-        {
+        if !nearby_name(q) {
             return None;
         }
+        let name = &q.question.name;
         let addrs = self.on_local_network(name).await;
         tracing::debug!(%name, found = addrs.len(), "looked for on the local network");
         if addrs.is_empty() {
@@ -143,6 +161,28 @@ impl Resolver {
         );
         // Only the asked family; none of it is an empty answer, not NXDOMAIN.
         Some(wire::local(query, q, &addrs))
+    }
+
+    /// The servers didn't answer: the local network's answer, or SERVFAIL.
+    async fn failed(&self, query: &[u8], q: &wire::Query, e: String) -> Vec<u8> {
+        if let Some(answer) = self.nearby_answer(query, q, None).await {
+            return answer;
+        }
+        self.journal.record(
+            self.entry(q, Outcome::Failed, Some(e), None, wire::RCODE_SERVFAIL),
+            None,
+        );
+        wire::error(query, q, wire::RCODE_SERVFAIL)
+    }
+
+    /// Drops what was learnt on the network before (the config changes with
+    /// it): cached answers and what the local network had.
+    pub fn forget(&self) {
+        self.cache.clear();
+        self.nearby
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
     }
 
     /// The DoH client for the configured URL, made anew when it changes.
@@ -292,24 +332,21 @@ impl Resolver {
         let unfiltered = s.config.passthrough || !q.standard || q.question.qclass != wire::CLASS_IN;
         if unfiltered {
             let t = Instant::now();
-            return Some(
-                match upstream::system(&s.config.system_servers, query).await {
-                    Ok((answer, _)) => {
-                        let rcode = wire::parse_answer(&answer).map_or(0, |a| a.rcode);
-                        let ms = Some(t.elapsed().as_millis() as u32);
-                        self.journal
-                            .record(self.entry(&q, Outcome::Passed, None, ms, rcode), None);
-                        answer
-                    }
-                    Err(e) => {
-                        self.journal.record(
-                            self.entry(&q, Outcome::Failed, Some(e), None, wire::RCODE_SERVFAIL),
-                            None,
-                        );
-                        wire::error(query, &q, wire::RCODE_SERVFAIL)
-                    }
-                },
-            );
+            let (mut answer, _) = match upstream::system(&s.config.system_servers, query).await {
+                Ok(a) => a,
+                Err(e) => return Some(self.failed(query, &q, e).await),
+            };
+            let ms = Some(t.elapsed().as_millis() as u32);
+            let rcode = wire::parse_answer(&answer).map_or(0, |a| a.rcode);
+            if rcode == wire::RCODE_NXDOMAIN && nearby_name(&q) {
+                if let Some(found) = self.nearby_answer(query, &q, ms).await {
+                    return Some(found);
+                }
+                answer = wire::brief_nxdomain(query, &q, MISS_SECS);
+            }
+            self.journal
+                .record(self.entry(&q, Outcome::Passed, None, ms, rcode), None);
+            return Some(answer);
         }
         if let Some(addrs) = s.local.get(&name) {
             self.journal
@@ -366,25 +403,22 @@ impl Resolver {
             return Some(hit);
         }
         let t = Instant::now();
-        let (answer, _) = match self.forward(&s, &name, query).await {
+        let (mut answer, _) = match self.forward(&s, &name, query).await {
             Ok(a) => a,
-            Err(e) => {
-                if let Some(answer) = self.nearby_answer(query, &q, None).await {
-                    return Some(answer);
-                }
-                self.journal.record(
-                    self.entry(&q, Outcome::Failed, Some(e), None, wire::RCODE_SERVFAIL),
-                    None,
-                );
-                return Some(wire::error(query, &q, wire::RCODE_SERVFAIL));
-            }
+            Err(e) => return Some(self.failed(query, &q, e).await),
         };
         let upstream_ms = Some(t.elapsed().as_millis() as u32);
         let parsed = wire::parse_answer(&answer).ok();
-        if parsed.as_ref().is_some_and(|a| a.rcode == wire::RCODE_NXDOMAIN)
-            && let Some(answer) = self.nearby_answer(query, &q, upstream_ms).await
-        {
-            return Some(answer);
+        // Not cached: the local network is asked again next time.
+        let missing = nearby_name(&q)
+            && parsed
+                .as_ref()
+                .is_some_and(|a| a.rcode == wire::RCODE_NXDOMAIN);
+        if missing {
+            if let Some(found) = self.nearby_answer(query, &q, upstream_ms).await {
+                return Some(found);
+            }
+            answer = wire::brief_nxdomain(query, &q, MISS_SECS);
         }
         // CNAME inspection: a blocked name behind an alias is blocked too.
         if filtering
@@ -417,7 +451,9 @@ impl Resolver {
         } else {
             Outcome::Answered
         };
-        self.cache.put(&q.question, &answer);
+        if !missing {
+            self.cache.put(&q.question, &answer);
+        }
         self.journal.record(
             self.entry(&q, outcome, would_block.or(allowed), upstream_ms, rcode),
             None,
@@ -438,22 +474,47 @@ mod tests {
         Resolver::new(Current::new(dir))
     }
 
+    #[test]
+    fn nearby_names_are_one_label_or_local_addresses() {
+        let q =
+            |name: &str, qtype| wire::parse_query(&wire::query(1, name, qtype).unwrap()).unwrap();
+        assert!(nearby_name(&q("garrserver", wire::TYPE_A)));
+        assert!(nearby_name(&q("printer.local", wire::TYPE_AAAA)));
+        assert!(!nearby_name(&q("garrserver", wire::TYPE_HTTPS)));
+        assert!(!nearby_name(&q("example.com", wire::TYPE_A)));
+    }
+
     /// Needs the network and a named computer on it:
     /// `$env:W4_LOCAL_NAME = "garrserver"; cargo test -p win4tress-dns nearby -- --ignored --nocapture`
     #[tokio::test]
     #[ignore = "needs a named computer on the local network"]
     async fn a_local_name_dns_doesn_t_know_is_found_nearby() {
         let name = std::env::var("W4_LOCAL_NAME").expect("W4_LOCAL_NAME");
-        let r = resolver(r#"{"system_servers":["1.1.1.1"]}"#);
-        for qtype in [wire::TYPE_A, wire::TYPE_AAAA] {
-            let q = wire::query(1, &name, qtype).unwrap();
-            let a = wire::parse_answer(&r.answer(&q).await.unwrap()).unwrap();
-            println!("{name} type {qtype}: rcode {} answers {}", a.rcode, a.answers.len());
-            // Found: an answer, even one with no records of the family asked for.
-            assert_eq!(a.rcode, wire::RCODE_NOERROR);
+        // Pass-through too: what a sign-in page, or a wake, switches to.
+        for passthrough in [false, true] {
+            let r = resolver(&format!(
+                r#"{{"system_servers":["1.1.1.1"],"passthrough":{passthrough}}}"#
+            ));
+            for qtype in [wire::TYPE_A, wire::TYPE_AAAA] {
+                let q = wire::query(1, &name, qtype).unwrap();
+                let a = wire::parse_answer(&r.answer(&q).await.unwrap()).unwrap();
+                println!(
+                    "passthrough {passthrough}, {name} type {qtype}: rcode {} answers {}",
+                    a.rcode,
+                    a.answers.len()
+                );
+                // Found: an answer, even one with no records of the family asked for.
+                assert_eq!(a.rcode, wire::RCODE_NOERROR);
+            }
+            let none = wire::query(2, "w4-no-such-host-7f3a91", wire::TYPE_A).unwrap();
+            let answer = r.answer(&none).await.unwrap();
+            assert_eq!(
+                wire::parse_answer(&answer).unwrap().rcode,
+                wire::RCODE_NXDOMAIN
+            );
+            // Kept seconds by Windows (the SOA's minimum ends the message), not here.
+            assert!(answer.ends_with(&MISS_SECS.to_be_bytes()));
+            assert_eq!(r.cache.len(), 0);
         }
-        let none = wire::query(2, "w4-no-such-host-7f3a91", wire::TYPE_A).unwrap();
-        let a = wire::parse_answer(&r.answer(&none).await.unwrap()).unwrap();
-        assert_eq!(a.rcode, wire::RCODE_NXDOMAIN);
     }
 }

@@ -28,9 +28,11 @@
   type NewApp = Extract<Alert, { kind: "first_network_activity" }>;
   type Item = { key: string; prompt: Prompt; notice?: never } | { key: string; notice: NewApp; prompt?: never };
 
-  /** A new app's card goes after a minute as the one showing (not counting
-   *  while the pointer is on it); the alert stays in the list. */
-  const NOTICE_MS = 60_000;
+  /** A new app's card goes after 6 s as the one showing (not counting while
+   *  the pointer is on it); the alert stays in the list. */
+  const NOTICE_MS = 6_000;
+  /** Off the card, the new app showing gets at least this much more. */
+  const AFTER_POINTER_MS = 3_000;
 
   let prompts = $state.raw<Prompt[]>([]);
   let notices = $state.raw<Alert[]>([]);
@@ -47,7 +49,7 @@
   let apps = $state.raw(new Map<number, KnownApp>());
   let root: HTMLElement;
   let hovered = false;
-  /** The new app showing, whose minute is counting. */
+  /** The new app showing, whose time is counting. */
   let timed: number | null = null;
   /** When its clock last started; null while it's stopped. */
   let shownAt: number | null = null;
@@ -120,7 +122,7 @@
     const offs = [events.onPrompts((p) => (prompts = p)), events.onNotices((n) => (notices = n))];
     const fit = new ResizeObserver(() => api.cardFit(Math.ceil(root.getBoundingClientRect().height)));
     fit.observe(root);
-    const timer = setInterval(tick, 5000);
+    const timer = setInterval(tick, 500);
     return () => {
       for (const off of offs) off.then((f) => f());
       fit.disconnect();
@@ -148,10 +150,9 @@
     stopClock();
   }
 
-  /** Off the card: the new app showing gets at least 10 s more. */
   function left() {
     hovered = false;
-    if (timed != null) seen.set(timed, Math.min(seen.get(timed) ?? 0, NOTICE_MS - 10_000));
+    if (timed != null) seen.set(timed, Math.min(seen.get(timed) ?? 0, NOTICE_MS - AFTER_POINTER_MS));
     startClock();
   }
 

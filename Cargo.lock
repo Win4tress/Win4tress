@@ -4751,7 +4751,7 @@ dependencies = [
 
 [[package]]
 name = "w4-core"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "serde",
  "serde_json",
@@ -4759,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "w4-dns"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "memmap2",
  "proptest",
@@ -4771,7 +4771,7 @@ dependencies = [
 
 [[package]]
 name = "w4-enforce"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "proptest",
  "thiserror 2.0.21",
@@ -4782,7 +4782,7 @@ dependencies = [
 
 [[package]]
 name = "w4-etw"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "ferrisetw",
  "proptest",
@@ -4794,7 +4794,7 @@ dependencies = [
 
 [[package]]
 name = "w4-geo"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "maxminddb",
  "w4-core",
@@ -4802,7 +4802,7 @@ dependencies = [
 
 [[package]]
 name = "w4-ipc"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "futures-util",
  "proptest",
@@ -4818,7 +4818,7 @@ dependencies = [
 
 [[package]]
 name = "w4-monitor"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "proptest",
  "w4-core",
@@ -4827,7 +4827,7 @@ dependencies = [
 
 [[package]]
 name = "w4-monitors"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "serde",
  "serde_json",
@@ -4839,7 +4839,7 @@ dependencies = [
 
 [[package]]
 name = "w4-store"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "rusqlite",
  "serde",
@@ -4851,7 +4851,7 @@ dependencies = [
 
 [[package]]
 name = "w4-sys"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "w4-core",
  "windows 0.62.2",
@@ -5087,7 +5087,7 @@ checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "win4tress-cli"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -5104,7 +5104,7 @@ dependencies = [
 
 [[package]]
 name = "win4tress-dns"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "clap",
@@ -5121,7 +5121,7 @@ dependencies = [
 
 [[package]]
 name = "win4tress-svc"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "anyhow",
  "clap",
@@ -5147,7 +5147,7 @@ dependencies = [
 
 [[package]]
 name = "win4tress-ui"
-version = "0.1.20"
+version = "0.1.23"
 dependencies = [
  "base64 0.23.1",
  "png",
